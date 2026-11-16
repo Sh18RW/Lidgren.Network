@@ -403,5 +403,10 @@ namespace Lidgren.Network
 			m_shutdownReason = bye;
 			m_status = NetPeerStatus.ShutdownRequested;
 		}
+		
+		/**
+		 * Corvinella Project changes
+		 */
+		public event Action<NetEndPoint, NetEndPoint>? ProxySourceResolved;
 	}
 }

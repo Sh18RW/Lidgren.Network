@@ -20,6 +20,7 @@ namespace Lidgren.Network
 		private NetPeerStatus m_status;
 		private Thread? m_networkThread;
 		private Socket? m_socket;
+		private ProxyProtocolSocket? m_proxyProtocolSocket;
 		internal readonly byte[] m_sendBuffer;
 		internal readonly byte[] m_receiveBuffer;
 		internal readonly NetIncomingMessage m_readHelperMessage;
@@ -171,6 +172,17 @@ namespace Lidgren.Network
 			var boundEp = (NetEndPoint)m_socket.LocalEndPoint;
 			LogDebug("Socket bound to " + boundEp + ": " + m_socket.IsBound);
 			m_listenPort = boundEp.Port;
+			
+			if (Configuration.ProxyProtocolEnabled)
+			{
+				m_proxyProtocolSocket = new ProxyProtocolSocket(
+					m_socket,
+					Configuration.TrustedProxies,
+					Configuration.ProxyProtocolAllowV1);
+
+				LogDebug(
+					$"PROXY protocol enabled; trusted proxies: '{Configuration.TrustedProxies}', allow v1: {Configuration.ProxyProtocolAllowV1}");
+			}
 		}
 
 		private void InitializeNetwork()
@@ -477,12 +489,29 @@ namespace Lidgren.Network
 		{
 			Debug.Assert(m_socket != null);
 
-			int bytesReceived = NetFastSocket.ReceiveFrom(
-				m_socket,
-				m_receiveBuffer, 0, m_receiveBuffer.Length,
-				SocketFlags.None,
-				out var senderRemote,
-				ref m_senderRemote);
+			int bytesReceived;
+			NetSocketAddress senderRemote;
+
+			if (m_proxyProtocolSocket != null)
+			{
+				bytesReceived = m_proxyProtocolSocket.ReceiveFrom(
+					m_receiveBuffer, 0, m_receiveBuffer.Length, SocketFlags.None,
+					out senderRemote, ref m_senderRemote);
+
+				if (m_proxyProtocolSocket.LastRealSource is { } realClientEndPoint)
+				{
+					ProxySourceResolved?.Invoke((NetEndPoint)senderRemote, realClientEndPoint);
+				}
+			}
+			else
+			{
+				bytesReceived = NetFastSocket.ReceiveFrom(
+					m_socket,
+					m_receiveBuffer, 0, m_receiveBuffer.Length,
+					SocketFlags.None,
+					out senderRemote,
+					ref m_senderRemote);
+			}
 
 			if (bytesReceived < NetConstants.HeaderByteSize)
 				return bytesReceived;

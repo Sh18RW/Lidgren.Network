@@ -758,6 +758,13 @@ namespace Lidgren.Network
 		}
 
 		internal int MTUForEndPoint(IPEndPoint endPoint) => MTUForAddress(endPoint.Address);
+		
+		/**
+		 * Corvinella Project changes
+		 */
+		public bool ProxyProtocolEnabled { get; set; } = false;
+		public string TrustedProxies { get; set; } = "";
+		public bool ProxyProtocolAllowV1 { get; set; } = false;
 	}
 
 	/// <summary>

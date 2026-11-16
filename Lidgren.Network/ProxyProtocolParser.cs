@@ -1,112 +1,165 @@
 using System;
 using System.Net;
+using System.Text;
 
 namespace Lidgren.Network;
 
-/// <summary>
-/// 
-/// </summary>
 public static class ProxyProtocolParser
 {
-	private static ReadOnlySpan<byte> V2Signature => [0x0D,0x0A,0x0D,0x0A,0x00,0x0D,0x0A,0x51,0x55,0x49,0x54,0x0A];
+	private static readonly byte[] Version2Signature =
+	[
+		0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A,
+		0x51, 0x55, 0x49, 0x54, 0x0A
+	];
 
-	/// <summary>
-	/// 
-	/// </summary>
-	/// <param name="data"></param>
-	/// <param name="realSource"></param>
-	/// <param name="headerLength"></param>
-	/// <returns></returns>
-	public static bool TryParse(ReadOnlySpan<byte> data, out IPEndPoint? realSource, out int headerLength)
+	private static readonly byte[] Version1Prefix = "PROXY "u8.ToArray();
+
+	public static bool TryParse(
+		ReadOnlySpan<byte> datagram,
+		bool allowProxyProtocolVersion1,
+		out IPEndPoint? realClientEndPoint,
+		out int headerLength)
 	{
-		realSource = null;
+		realClientEndPoint = null;
 		headerLength = 0;
 
-		if (data.Length >= 16 && data[..12].SequenceEqual(V2Signature))
+		if (StartsWith(datagram, Version2Signature))
 		{
-			return TryParseV2(data, out realSource, out headerLength);
+			return TryParseVersion2(datagram, out realClientEndPoint, out headerLength);
 		}
 
-		if (data.Length >= 6 && data[..5].SequenceEqual("PROXY"u8))
+		if (allowProxyProtocolVersion1 && StartsWith(datagram, Version1Prefix))
 		{
-			return TryParseV1(data, out realSource, out headerLength);
+			return TryParseVersion1(datagram, out realClientEndPoint, out headerLength);
 		}
 
 		return false;
 	}
 
-	private static bool TryParseV2(ReadOnlySpan<byte> data, out IPEndPoint? endPoint, out int length)
+	private static bool StartsWith(ReadOnlySpan<byte> datagram, ReadOnlySpan<byte> prefix)
+		=> datagram.Length >= prefix.Length
+		   && datagram[..prefix.Length].SequenceEqual(prefix);
+
+	private static bool TryParseVersion2(
+		ReadOnlySpan<byte> datagram,
+		out IPEndPoint? realClientEndPoint,
+		out int headerLength)
 	{
-		endPoint = null;
-		length = 0;
-		var versionCommand = data[12];
-		if (versionCommand >> 4 != 0x2)
+		realClientEndPoint = null;
+		headerLength = 0;
+
+		if (datagram.Length < 16)
 		{
 			return false;
 		}
 
-		if ((versionCommand & 0x0F) != 0x1)
+		var versionAndCommand = datagram[12];
+		if ((versionAndCommand >> 4) != 0x2)
 		{
 			return false;
 		}
 
-		var famProto = data[13];
-		var addressLength = (data[14] << 8) | data[15];
-		length = 16 + addressLength;
+		if ((versionAndCommand & 0x0F) != 0x1)
+		{
+			return false;
+		}
 
-		switch (famProto >> 4)
+		var addressFamilyAndProtocol = datagram[13];
+		var addressLength = (datagram[14] << 8) | datagram[15];
+		var totalLength = 16 + addressLength;
+		if (datagram.Length < totalLength)
+		{
+			return false;
+		}
+
+		var addressFamily = addressFamilyAndProtocol >> 4;
+		switch (addressFamily)
 		{
 			case 0x1: // AF_INET
+			{
 				if (addressLength < 12)
 				{
 					return false;
 				}
-				var src4 = new IPAddress(data.Slice(16, 4));
-				var port4 = (data[24] << 8) | data[25];
-				endPoint = new IPEndPoint(src4, port4);
+
+				var sourceAddress = new IPAddress(datagram.Slice(16, 4));
+				var sourcePort = (datagram[24] << 8) | datagram[25];
+
+				realClientEndPoint = new IPEndPoint(sourceAddress, sourcePort);
+				headerLength = totalLength;
 				return true;
+			}
 			case 0x2: // AF_INET6
-				if (addressLength < 36) return false;
-				var src6 = new IPAddress(data.Slice(16, 16));
-				var port6 = (data[32] << 8) | data[33];
-				endPoint = new IPEndPoint(src6, port6);
+			{
+				if (addressLength < 36)
+				{
+					return false;
+				}
+
+				var sourceAddress = new IPAddress(datagram.Slice(16, 16));
+				var sourcePort = (datagram[32] << 8) | datagram[33];
+
+				realClientEndPoint = new IPEndPoint(sourceAddress, sourcePort);
+				headerLength = totalLength;
 				return true;
+			}
 			default:
 				return false;
 		}
 	}
 
-	private static bool TryParseV1(ReadOnlySpan<byte> data, out IPEndPoint? endPoint, out int length)
+	private static bool TryParseVersion1(
+		ReadOnlySpan<byte> datagram,
+		out IPEndPoint? realClientEndPoint,
+		out int headerLength)
 	{
-		endPoint = null;
-		length = 0;
-		var crlf = data.IndexOf("\r\n"u8);
-		if (crlf is < 0 or > 107)
-		{
-			return false;
-		}
-		length = crlf + 2;
+		realClientEndPoint = null;
+		headerLength = 0;
 
-		// PROXY UDP4 <src> <dst> <sport> <dport>\r\n
-		var line = System.Text.Encoding.ASCII.GetString(data[..crlf]);
-		var parts = line.Split(' ');
-		if (parts.Length < 6 || parts[0] != "PROXY")
+		var crlfIndex = -1;
+		for (var index = 6; index + 1 < datagram.Length; index++)
+		{
+			if (datagram[index] != (byte)'\r' || datagram[index + 1] != (byte)'\n') continue;
+			crlfIndex = index;
+			break;
+		}
+
+		if (crlfIndex is < 0 or > 107)
 		{
 			return false;
 		}
-		if (parts[1] is not ("UDP4" or "UDP6" or "TCP4" or "TCP6"))
+
+		var headerLine = Encoding.ASCII.GetString(datagram.Slice(0, crlfIndex).ToArray());
+		var parts = headerLine.Split(' ');
+		if (parts.Length < 6)
 		{
 			return false;
 		}
-		if (!IPAddress.TryParse(parts[2], out var src))
+
+		if (parts[0] != "PROXY")
 		{
 			return false;
 		}
-		if (!int.TryParse(parts[4], out var sport))
+
+		var protocol = parts[1];
+		if (protocol != "UDP4" && protocol != "UDP6" &&
+		    protocol != "TCP4" && protocol != "TCP6")
 		{
 			return false;
 		}
-		endPoint = new IPEndPoint(src, sport);
+
+		if (!IPAddress.TryParse(parts[2], out var sourceAddress))
+		{
+			return false;
+		}
+
+		if (!int.TryParse(parts[4], out var sourcePort))
+		{
+			return false;
+		}
+
+		realClientEndPoint = new IPEndPoint(sourceAddress, sourcePort);
+		headerLength = crlfIndex + 2;
 		return true;
 	}
 }
