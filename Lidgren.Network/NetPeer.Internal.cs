@@ -363,10 +363,10 @@ namespace Lidgren.Network
 						{
 #if DEBUG
 							// sanity check
-							if (conn.m_status == NetConnectionStatus.Disconnected && m_handshakes.ContainsKey(conn.RemoteEndPoint))
+							if (conn.m_status == NetConnectionStatus.Disconnected && m_handshakes.ContainsKey(conn.m_remoteEndPoint))
 							{
 								LogWarning("Sanity fail! Handshakes list contained disconnected connection!");
-								m_handshakes.Remove(conn.RemoteEndPoint);
+								m_handshakes.Remove(conn.m_remoteEndPoint);
 							}
 #endif
 							break; // collection has been modified
@@ -396,7 +396,7 @@ namespace Lidgren.Network
 							// remove connection
 							//
 							m_connections.RemoveAt(i);
-							m_connectionLookup.Remove((NetSocketAddress)conn.RemoteEndPoint);
+							m_connectionLookup.Remove((NetSocketAddress)conn.m_remoteEndPoint);
 						}
 					}
 				}

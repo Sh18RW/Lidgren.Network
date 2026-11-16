@@ -13,7 +13,7 @@ namespace Lidgren.Network
 	/// <summary>
 	/// Represents a connection to a remote peer
 	/// </summary>
-	[DebuggerDisplay("RemoteUniqueIdentifier={RemoteUniqueIdentifier} RemoteEndPoint={m_remoteEndPoint}")]
+	[DebuggerDisplay("RemoteUniqueIdentifier={RemoteUniqueIdentifier} RemoteEndPoint={RemoteEndPoint}")]
 	public partial class NetConnection
 	{
 		private const int m_infrequentEventsSkipFrames = 8; // number of heartbeats to skip checking for infrequent events (ping, timeout etc)
@@ -65,7 +65,13 @@ namespace Lidgren.Network
 		/// <summary>
 		/// Gets the remote endpoint for the connection
 		/// </summary>
-		public NetEndPoint RemoteEndPoint { get { return m_remoteEndPoint; } }
+		public NetEndPoint RemoteEndPoint
+		{
+			get
+			{
+				return m_realClientEndPoint ?? m_remoteEndPoint;
+			}
+		}
 
 		/// <summary>
 		/// Gets the unique identifier of the remote NetPeer for this connection
