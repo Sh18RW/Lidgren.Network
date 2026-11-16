@@ -1,4 +1,4 @@
-﻿using System;
+﻿	using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading;
@@ -25,6 +25,7 @@ namespace Lidgren.Network
 		internal NetConnectionStatus m_outputtedStatus; // status that has been sent as StatusChanged message
 		internal NetConnectionStatus m_visibleStatus; // status visible by querying the Status property
 		internal NetEndPoint m_remoteEndPoint;
+		internal NetEndPoint? m_realClientEndPoint;
 		internal NetSenderChannelBase?[] m_sendChannels;
 		internal NetReceiverChannelBase?[] m_receiveChannels;
 		internal NetOutgoingMessage? m_localHailMessage;
@@ -75,6 +76,8 @@ namespace Lidgren.Network
 		/// Gets the local hail message that was sent as part of the handshake, if any
 		/// </summary>
 		public NetOutgoingMessage? LocalHailMessage { get { return m_localHailMessage; } }
+		
+		public NetEndPoint? RealRemoteEndPoint => m_realClientEndPoint;
 
 		// gets the time before automatically resending an unacked message
 		internal double GetResendDelay()

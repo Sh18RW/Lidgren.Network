@@ -489,6 +489,9 @@ namespace Lidgren.Network
 		{
 			Debug.Assert(m_socket != null);
 
+			if (m_socket == null)
+				return 0;
+
 			int bytesReceived;
 			NetSocketAddress senderRemote;
 
@@ -497,11 +500,6 @@ namespace Lidgren.Network
 				bytesReceived = m_proxyProtocolSocket.ReceiveFrom(
 					m_receiveBuffer, 0, m_receiveBuffer.Length, SocketFlags.None,
 					out senderRemote, ref m_senderRemote);
-
-				if (m_proxyProtocolSocket.LastRealSource is { } realClientEndPoint)
-				{
-					ProxySourceResolved?.Invoke((NetEndPoint)senderRemote, realClientEndPoint);
-				}
 			}
 			else
 			{
@@ -879,9 +877,10 @@ namespace Lidgren.Network
 
 					// Ok, start handshake!
 					NetConnection conn = new NetConnection(this, senderEndPoint);
+					conn.m_realClientEndPoint = m_proxyProtocolSocket?.LastRealSource;
 					conn.m_status = NetConnectionStatus.ReceivedInitiation;
 					m_handshakes.Add(senderEndPoint, conn);
-					m_ipConnectionCounts[ip] = conCount + 1; // these stay until you disconnect
+					m_ipConnectionCounts[ip] = conCount + 1;
 					conn.ReceivedHandshake(now, tp, ptr, payloadByteLength);
 					return;
 
